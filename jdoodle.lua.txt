@@ -16,6 +16,10 @@ local Busy = false
 local ScourgeActive = false
 local ScourgeRound = 0
 
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+
 local KingScourgeStart
 local KingScourgeEnd
 
@@ -35,12 +39,6 @@ pcall(function()
         KingScourge:WaitForChild("KingScourgeEnd")
 
 end)
-
-
-
-local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
 
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
@@ -492,7 +490,7 @@ end)
 local Window = Library:CreateWindow({
     Title = "Readers Interface",
     Footer = "Violence district by 49|51",
-    Icon = 95816097006870,
+    Icon = 121181754075894,
     NotifySide = "Right",
 })
 
@@ -504,6 +502,11 @@ Library:Notify({
 
 local SurvivorTab = Window:AddTab("Survivor", "user")
 
+local Groupbox = SurvivorTab:AddGroupbox({
+    Side = "Left",
+    Name = "Generator",
+})
+
 local Dropdown = Groupbox:AddDropdown("CheckMethod", {
     Text = "Method",
     Values = { "Legit", "Instant" },
@@ -511,19 +514,24 @@ local Dropdown = Groupbox:AddDropdown("CheckMethod", {
     Multi = false,
 })
 
+Dropdown:OnChanged(function(value)
+    Mode = string.upper(value)
+end)
+
 local GeneratorToggle = Groupbox:AddToggle("Generator", {
     Text = "Auto generator",
     Default = false,
 })
 
-Toggles.GeneratorToggle:OnChanged(function(state)
+GeneratorToggle:OnChanged(function(state)
+
     Enabled = state
 
-        Busy = false
+    Busy = false
 
-        if not Enabled then
-            ScourgeActive = false
-            PreviousVisible = false
-        end
+    if not Enabled then
+        ScourgeActive = false
+        PreviousVisible = false
     end
+
 end)
