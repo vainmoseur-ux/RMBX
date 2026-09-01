@@ -515,3 +515,15 @@ local GeneratorToggle = Groupbox:AddToggle("Generator", {
     Text = "Auto generator",
     Default = false,
 })
+
+Toggles.GeneratorToggle:OnChanged(function(state)
+    Enabled = state
+
+        Busy = false
+
+        if not Enabled then
+            ScourgeActive = false
+            PreviousVisible = false
+        end
+    end
+end)
