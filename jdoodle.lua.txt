@@ -1,0 +1,517 @@
+local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/deividcomsono/Obsidian/refs/heads/main/Library.lua"))()
+
+local Enabled = false
+local Mode = "Legit"
+
+local SUCCESS_MIN = 102
+local SUCCESS_MAX = 116
+
+local NEUTRAL_MIN = 116
+local NEUTRAL_MAX = 159
+
+local TriggerDelay = 0.035
+local LastTrigger = 0
+
+local Busy = false
+local ScourgeActive = false
+local ScourgeRound = 0
+
+local KingScourgeStart
+local KingScourgeEnd
+
+pcall(function()
+
+    local KillerPerks =
+        ReplicatedStorage:WaitForChild("Remotes")
+            :WaitForChild("KillerPerks")
+
+    local KingScourge =
+        KillerPerks:WaitForChild("kingscourge")
+
+    KingScourgeStart =
+        KingScourge:WaitForChild("KingScourgeStart")
+
+    KingScourgeEnd =
+        KingScourge:WaitForChild("KingScourgeEnd")
+
+end)
+
+
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+
+local Check
+local Line
+local Goal
+local Action
+
+local function RefreshReferences()
+
+    pcall(function()
+
+        local SkillGui =
+            PlayerGui:FindFirstChild("SkillCheckPromptGui")
+
+        if SkillGui then
+
+            Check =
+                SkillGui:FindFirstChild("Check")
+
+            if Check then
+
+                Line =
+                    Check:FindFirstChild("Line")
+
+                Goal =
+                    Check:FindFirstChild("Goal")
+
+            end
+
+        end
+
+        local Survivor =
+            PlayerGui:FindFirstChild("Survivor-mob")
+
+        if Survivor then
+
+            local Controls =
+                Survivor:FindFirstChild("Controls")
+
+            if Controls then
+                Action =
+                    Controls:FindFirstChild("action")
+            end
+
+        end
+
+    end)
+
+end
+
+RefreshReferences()
+
+task.spawn(function()
+
+    while true do
+
+        RefreshReferences()
+
+        task.wait(0.5)
+
+    end
+
+end)
+
+local function TriggerAction()
+
+    if not Action then
+        RefreshReferences()
+    end
+
+    if not Action then
+        return false
+    end
+
+    local Now = os.clock()
+
+    if Now - LastTrigger < TriggerDelay then
+        return false
+    end
+
+    LastTrigger = Now
+
+    pcall(function()
+
+        if Action:IsA("GuiButton") then
+            Action:Activate()
+        end
+
+    end)
+
+    if typeof(firesignal) == "function" then
+
+        pcall(function()
+            firesignal(Action.MouseButton1Down)
+        end)
+
+    end
+
+    return true
+
+end
+
+local function GetAngle()
+
+    if not Line or not Goal then
+        return nil
+    end
+
+    return
+        tonumber(Line.Rotation) or 0,
+        tonumber(Goal.Rotation) or 0
+
+end
+
+local function IsSuccess()
+
+    local LineRotation, GoalRotation =
+        GetAngle()
+
+    if not LineRotation then
+        return false
+    end
+
+    local Min =
+        GoalRotation + SUCCESS_MIN
+
+    local Max =
+        GoalRotation + SUCCESS_MAX
+
+    return
+        LineRotation >= Min
+        and
+        LineRotation <= Max
+
+end
+
+local function IsNeutral()
+
+    local LineRotation, GoalRotation =
+        GetAngle()
+
+    if not LineRotation then
+        return false
+    end
+
+    local Min =
+        GoalRotation + NEUTRAL_MIN
+
+    local Max =
+        GoalRotation + NEUTRAL_MAX
+
+    return
+        LineRotation > Min
+        and
+        LineRotation <= Max
+
+end
+
+local function InstantNormal()
+
+    if not Check or not Line or not Goal then
+        RefreshReferences()
+    end
+
+    if not Check or not Line or not Goal then
+        return
+    end
+
+    if not Check.Visible then
+        return
+    end
+
+    local GoalRotation =
+        tonumber(Goal.Rotation) or 0
+
+    Line.Rotation =
+        GoalRotation + 109
+
+    TriggerAction()
+
+end
+
+local function InstantScourge()
+
+    if not Enabled then
+        return
+    end
+
+    if not ScourgeActive then
+        return
+    end
+
+    if not Line or not Goal then
+        RefreshReferences()
+    end
+
+    if not Line or not Goal then
+        return
+    end
+
+    local GoalRotation =
+        tonumber(Goal.Rotation) or 0
+
+    Line.Rotation =
+        GoalRotation + 109
+
+    TriggerAction()
+
+    ScourgeRound = ScourgeRound + 1
+
+end
+
+if KingScourgeStart then
+
+    KingScourgeStart.OnClientEvent:Connect(
+        function()
+
+            if not Enabled then
+                return
+            end
+
+            ScourgeActive = true
+            ScourgeRound = 0
+            Busy = false
+
+            task.defer(function()
+
+                if not Enabled then
+                    return
+                end
+
+                if Mode == "INSTANT" then
+                    InstantScourge()
+                end
+
+            end)
+
+        end
+    )
+
+end
+
+if KingScourgeEnd then
+
+    KingScourgeEnd.OnClientEvent:Connect(
+        function()
+
+            ScourgeActive = false
+            Busy = false
+
+        end
+    )
+
+end
+
+local PreviousVisible = false
+
+RunService.RenderStepped:Connect(function()
+
+    if not Enabled then
+
+        PreviousVisible = false
+
+        return
+
+    end
+
+    if not Check then
+        RefreshReferences()
+    end
+
+    if not Check then
+        return
+    end
+
+    local Visible =
+        Check.Visible
+
+    if Visible and not PreviousVisible then
+
+        Busy = false
+
+        if not ScourgeActive then
+
+            if Mode == "INSTANT" then
+                InstantNormal()
+            end
+
+        end
+
+    end
+
+    PreviousVisible =
+        Visible
+
+    if Visible and not ScourgeActive then
+
+        if not Busy then
+
+            local ShouldTrigger = false
+
+            if Mode == "SUCCESS" then
+
+                ShouldTrigger =
+                    IsSuccess()
+
+            elseif Mode == "NEUTRAL" then
+
+                ShouldTrigger =
+                    IsNeutral()
+
+            end
+
+            if ShouldTrigger then
+
+                Busy = true
+
+                TriggerAction()
+
+                task.delay(0.07, function()
+                    Busy = false
+                end)
+
+            end
+
+        end
+
+    end
+
+    if ScourgeActive and Visible then
+
+        if Mode == "SUCCESS" then
+
+            if not Busy and IsSuccess() then
+
+                Busy = true
+
+                TriggerAction()
+
+                task.delay(0.06, function()
+                    Busy = false
+                end)
+
+            end
+
+        elseif Mode == "NEUTRAL" then
+
+            if not Busy and IsNeutral() then
+
+                Busy = true
+
+                TriggerAction()
+
+                task.delay(0.06, function()
+                    Busy = false
+                end)
+
+            end
+
+        elseif Mode == "INSTANT" then
+
+            local CurrentGoal =
+                tonumber(Goal.Rotation) or 0
+
+            local CurrentLine =
+                tonumber(Line.Rotation) or 0
+
+            local Distance =
+                math.abs(CurrentLine - CurrentGoal)
+
+            if Distance > 130 then
+                Busy = false
+            end
+
+        end
+
+    end
+
+end)
+
+task.spawn(function()
+
+    local LastGoalRotation = nil
+
+    while true do
+
+        if Enabled
+            and ScourgeActive
+            and Mode == "INSTANT" then
+
+            RefreshReferences()
+
+            if Check
+                and Check.Visible
+                and Goal
+                and Line then
+
+                local CurrentGoal =
+                    tonumber(Goal.Rotation) or 0
+
+                if LastGoalRotation == nil then
+
+                    LastGoalRotation =
+                        CurrentGoal
+
+                    InstantScourge()
+
+                elseif
+                    math.abs(
+                        CurrentGoal -
+                        LastGoalRotation
+                    ) > 1 then
+
+                    LastGoalRotation =
+                        CurrentGoal
+
+                    InstantScourge()
+
+                end
+
+            end
+
+        else
+
+            LastGoalRotation = nil
+
+        end
+
+        task.wait(0.005)
+
+    end
+
+end)
+
+LocalPlayer.CharacterAdded:Connect(function()
+
+    Busy = false
+    ScourgeActive = false
+    PreviousVisible = false
+
+    task.wait(1)
+
+    RefreshReferences()
+
+end)
+
+local Window = Library:CreateWindow({
+    Title = "Readers Interface",
+    Footer = "Violence district by 49|51",
+    Icon = 95816097006870,
+    NotifySide = "Right",
+})
+
+Library:Notify({
+    Title = "Execute successfully",
+    Description = "Enjoy the script",
+    Time = 4,
+})
+
+local SurvivorTab = Window:AddTab("Survivor", "user")
+
+local Dropdown = Groupbox:AddDropdown("CheckMethod", {
+    Text = "Method",
+    Values = { "Legit", "Instant" },
+    Default = 1,
+    Multi = false,
+})
+
+local GeneratorToggle = Groupbox:AddToggle("Generator", {
+    Text = "Auto generator",
+    Default = false,
+})
