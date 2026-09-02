@@ -306,35 +306,56 @@ end
 -- Deteksi tombol attack (mobile)
 local function SetupAttackButton()
     local AttackButton = nil
-    for _, child in ipairs(PlayerGui:GetDescendants()) do
-        if child.Name:lower() == "attack" and (child:IsA("ImageButton") or child:IsA("TextButton")) then
-            AttackButton = child
-            break
+
+    -- Langsung cari di Slasher-mob (karena kamu main sebagai killer)
+    local slasher = PlayerGui:FindFirstChild("Slasher-mob")
+    if slasher then
+        local controls = slasher:FindFirstChild("Controls")
+        if controls then
+            AttackButton = controls:FindFirstChild("attack")
+        end
+    end
+
+    -- Kalau gagal (misal lagi main survivor), cari di seluruh PlayerGui
+    if not AttackButton then
+        for _, child in ipairs(PlayerGui:GetDescendants()) do
+            if child.Name:lower() == "attack" and (child:IsA("ImageButton") or child:IsA("TextButton")) then
+                AttackButton = child
+                break
+            end
         end
     end
 
     if not AttackButton then
-        warn("Tombol 'attack' tidak ditemukan!")
+        warn("⚠️ Tombol 'attack' tidak ditemukan! Path: PlayerGui.Slasher-mob.Controls.attack")
         return
     end
 
-    AttackButton.MouseButton1Down:Connect(function()
+    -- Hapus koneksi lama (biar ga dobel)
+    if AttackButton._connections then
+        for _, con in ipairs(AttackButton._connections) do
+            con:Disconnect()
+        end
+    end
+
+    -- Event HOLD
+    local function onPress()
         AttackHeld = true
         task.spawn(AimAndThrow)
-    end)
-    AttackButton.MouseButton1Up:Connect(function()
+    end
+    local function onRelease()
         AttackHeld = false
         if Snapline then Snapline.Visible = false end
-    end)
-    AttackButton.TouchBegan:Connect(function()
-        AttackHeld = true
-        task.spawn(AimAndThrow)
-    end)
-    AttackButton.TouchEnded:Connect(function()
-        AttackHeld = false
-        if Snapline then Snapline.Visible = false end
-    end)
-    print("✅ Tombol 'attack' terdeteksi!")
+    end
+
+    local con1 = AttackButton.MouseButton1Down:Connect(onPress)
+    local con2 = AttackButton.MouseButton1Up:Connect(onRelease)
+    local con3 = AttackButton.TouchBegan:Connect(onPress)
+    local con4 = AttackButton.TouchEnded:Connect(onRelease)
+
+    AttackButton._connections = {con1, con2, con3, con4}
+
+    print("✅ Tombol 'attack' ditemukan di:", AttackButton:GetFullName())
 end
 
 task.wait(1)
