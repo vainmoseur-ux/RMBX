@@ -333,7 +333,7 @@ end
 local function SetupAttackButton()
     local AttackButton = nil
 
-    -- 1. Cari di Slasher-mob (killer) dulu
+    -- 1. PRIORITAS: Cari Slasher-mob langsung di PlayerGui
     local slasher = PlayerGui:FindFirstChild("Slasher-mob")
     if slasher then
         local controls = slasher:FindFirstChild("Controls")
@@ -342,7 +342,7 @@ local function SetupAttackButton()
         end
     end
 
-    -- 2. Kalau belum ketemu, cari di seluruh PlayerGui (fallback)
+    -- 2. FALLBACK: Cari di seluruh PlayerGui
     if not AttackButton then
         for _, child in ipairs(PlayerGui:GetDescendants()) do
             if child.Name:lower() == "attack" and (child:IsA("ImageButton") or child:IsA("TextButton")) then
@@ -353,23 +353,26 @@ local function SetupAttackButton()
     end
 
     if not AttackButton then
-        warn("⚠️ Tombol 'attack' tidak ditemukan! Path: PlayerGui.Slasher-mob.Controls.attack")
+        warn("⚠️ Tombol 'attack' TIDAK DITEMUKAN!")
         return
     end
 
-    -- Hapus koneksi lama (biar ga dobel)
+    print("✅ Tombol 'attack' ditemukan di:", AttackButton:GetFullName())
+
+    -- Hapus koneksi lama
     if AttackButton._connections then
         for _, con in ipairs(AttackButton._connections) do
             con:Disconnect()
         end
     end
 
-    -- Event HOLD
     local function onPress()
+        print("🔴 Tombol attack DITEKAN!")
         AttackHeld = true
         task.spawn(AimAndThrow)
     end
     local function onRelease()
+        print("🟢 Tombol attack DILEPAS!")
         AttackHeld = false
         if Snapline then Snapline.Visible = false end
     end
@@ -380,8 +383,6 @@ local function SetupAttackButton()
     local con4 = AttackButton.TouchEnded:Connect(onRelease)
 
     AttackButton._connections = {con1, con2, con3, con4}
-
-    print("✅ Tombol 'attack' ditemukan di:", AttackButton:GetFullName())
 end
 
 task.wait(1)
