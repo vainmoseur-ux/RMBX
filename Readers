@@ -606,7 +606,7 @@ end)
 local Window = Library:CreateWindow({
     Title = "Readers Interface",
     Footer = "Violence district by 49|51",
-    Icon = 95816097006870,
+    Icon = 109191417436356,
     NotifySide = "Right",
 })
 
