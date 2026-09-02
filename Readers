@@ -1,57 +1,276 @@
 local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/deividcomsono/Obsidian/refs/heads/main/Library.lua"))()
 
--- ============================================
--- VARIABEL GLOBAL
--- ============================================
-local Players, RS, RunService, Camera, Lighting, StarterGui = game:GetService("Players"), game:GetService("ReplicatedStorage"), game:GetService("RunService"), workspace.CurrentCamera, game:GetService("Lighting"), game:GetService("StarterGui")
-local LocalPlayer, PlayerGui = Players.LocalPlayer, Players.LocalPlayer:WaitForChild("PlayerGui")
+local Enabled = false
+local Mode = "Legit"
 
-local Enabled, Mode, Busy, ScourgeActive, ScourgeRound, PreviousVisible = false, "Legit", false, false, 0, false
-local SUCCESS_MIN, SUCCESS_MAX, NEUTRAL_MIN, NEUTRAL_MAX = 102, 116, 116, 159
-local TriggerDelay, LastTrigger = 0.035, 0
+local SUCCESS_MIN = 102
+local SUCCESS_MAX = 116
 
-local KingScourgeStart, KingScourgeEnd
-pcall(function() local kp = RS:WaitForChild("Remotes"):WaitForChild("KillerPerks"):WaitForChild("kingscourge") KingScourgeStart, KingScourgeEnd = kp:WaitForChild("KingScourgeStart"), kp:WaitForChild("KingScourgeEnd") end)
+local NEUTRAL_MIN = 116
+local NEUTRAL_MAX = 159
 
-local vector = vector or {} if not vector.create then vector.create = function(x,y,z) return Vector3.new(x,y,z) end end
+local TriggerDelay = 0.035
+local LastTrigger = 0
 
--- ============================================
--- SILENT AIM VEIL + SNAPLINE
--- ============================================
-local TargetPart, AimbotEnabled, AttackHeld, AimDelay, LastAimTime, FOV_Radius = "Head", false, false, 0.15, 0, 100
-local SpearthrowRemote = nil
+local Busy = false
+local ScourgeActive = false
+local ScourgeRound = 0
 
--- Cari Remote Spearthrow (Otomatis)
-local function FindRemote()
-    local killers = RS:FindFirstChild("Remotes") and RS.Remotes:FindFirstChild("Killers")
-    if killers then
-        for _, folder in ipairs(killers:GetChildren()) do
-            for _, remote in ipairs(folder:GetChildren()) do
-                if remote.Name:lower() == "spearthrow" then return remote end
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Camera = workspace.CurrentCamera
+local Lighting = game:GetService("Lighting")
+local StarterGui = game:GetService("StarterGui")
+
+-- Fallback vector.create kalau gak ada library
+local vector = vector or {}
+if not vector.create then
+    vector.create = function(x, y, z)
+        return Vector3.new(x, y, z)
+    end
+end
+
+local KingScourgeStart
+local KingScourgeEnd
+
+pcall(function()
+    local KillerPerks = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("KillerPerks")
+    local KingScourge = KillerPerks:WaitForChild("kingscourge")
+    KingScourgeStart = KingScourge:WaitForChild("KingScourgeStart")
+    KingScourgeEnd = KingScourge:WaitForChild("KingScourgeEnd")
+end)
+
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+local Mouse = LocalPlayer:GetMouse()
+
+-- ============================================================
+-- 🌌 ESP MODULE (Dari Denoting2, dimodifikasi)
+-- ============================================================
+
+local espEnabled = false
+local tracerEnabled = false
+local fullbrightEnabled = false
+local killerAlertEnabled = false
+
+local highlightObjects = {}
+local tracerLines = {}
+local lastAlertTime = 0
+local espConnection = nil
+
+local function AddESP(player)
+    if player == LocalPlayer then return end
+    
+    local function setupHighlight(char)
+        if highlightObjects[player] then
+            highlightObjects[player]:Destroy()
+            highlightObjects[player] = nil
+        end
+        
+        local h = Instance.new("Highlight")
+        h.Parent = game.CoreGui
+        h.Adornee = char
+        h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        
+        if player.Team == LocalPlayer.Team then
+            h.FillColor = Color3.fromRGB(0, 255, 180)
+        else
+            h.FillColor = Color3.fromRGB(255, 60, 60)
+        end
+        
+        h.FillTransparency = 0.45
+        h.OutlineColor = Color3.new(1, 1, 1)
+        highlightObjects[player] = h
+    end
+    
+    if player.Character then
+        setupHighlight(player.Character)
+    end
+    
+    player.CharacterAdded:Connect(function(char)
+        setupHighlight(char)
+    end)
+end
+
+local function SetESP(state)
+    espEnabled = state
+    if espEnabled then
+        for _, plr in ipairs(Players:GetPlayers()) do
+            AddESP(plr)
+        end
+        if not espConnection then
+            espConnection = Players.PlayerAdded:Connect(function(plr)
+                if espEnabled then AddESP(plr) end
+            end)
+        end
+    else
+        for _, h in pairs(highlightObjects) do
+            h:Destroy()
+        end
+        highlightObjects = {}
+        if espConnection then
+            espConnection:Disconnect()
+            espConnection = nil
+        end
+    end
+end
+
+local function UpdateTracers()
+    if not tracerEnabled then
+        for _, line in pairs(tracerLines) do
+            line.Visible = false
+        end
+        return
+    end
+    
+    for _, plr in pairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+            if not tracerLines[plr] then
+                local line = Drawing.new("Line")
+                line.Thickness = 2
+                line.Transparency = 1
+                tracerLines[plr] = line
+            end
+            
+            local pos, onScreen = Camera:WorldToViewportPoint(
+                plr.Character.HumanoidRootPart.Position
+            )
+            
+            if onScreen then
+                local line = tracerLines[plr]
+                line.Visible = true
+                line.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
+                line.To = Vector2.new(pos.X, pos.Y)
+                
+                if plr.Team == LocalPlayer.Team then
+                    line.Color = Color3.fromRGB(0, 255, 180)
+                else
+                    line.Color = Color3.fromRGB(255, 60, 60)
+                end
+            else
+                tracerLines[plr].Visible = false
             end
         end
     end
-    return nil
 end
-SpearthrowRemote = FindRemote()
 
--- Drawing (Snapline & FOV)
-local Snapline, SnaplineEnabled = Drawing.new("Line"), true
-Snapline.Thickness, Snapline.Color, Snapline.Transparency, Snapline.Visible = 2, Color3.fromRGB(255,0,0), 0.8, false
+local function SetTracer(state)
+    tracerEnabled = state
+    if not tracerEnabled then
+        for _, line in pairs(tracerLines) do
+            line.Visible = false
+        end
+    end
+end
+
+local function SetFullbright(state)
+    fullbrightEnabled = state
+    if fullbrightEnabled then
+        Lighting.Brightness = 4
+        Lighting.ClockTime = 14
+        Lighting.FogEnd = 100000
+        Lighting.GlobalShadows = false
+    else
+        Lighting.Brightness = 2
+        Lighting.GlobalShadows = true
+    end
+end
+
+local function SetKillerAlert(state)
+    killerAlertEnabled = state
+end
+
+-- ============================================================
+-- 🎯 SILENT AIM VEIL + SNAPLINE
+-- ============================================================
+
+local TargetPart = "Head"
+local AimbotEnabled = false
+local AttackHeld = false
+local AimDelay = 0.15
+local LastAimTime = 0
+local FOV_Radius = 100
+
+-- ===== CARI REMOTE SPEARTHROW (Otomatis di SEMUA Killers) =====
+local SpearthrowRemote = nil
+local remotePath = ""
+
+local function FindSpearthrowRemote()
+    local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+    if not remotes then return nil end
+    
+    local killers = remotes:FindFirstChild("Killers")
+    if not killers then return nil end
+    
+    for _, folder in ipairs(killers:GetChildren()) do
+        if folder:IsA("Folder") or folder:IsA("Model") then
+            for _, remote in ipairs(folder:GetChildren()) do
+                if remote.Name:lower() == "spearthrow" then
+                    return remote, folder.Name
+                end
+            end
+        end
+    end
+    return nil, nil
+end
+
+SpearthrowRemote, remotePath = FindSpearthrowRemote()
+
+if SpearthrowRemote then
+    print("✅ Spearthrow ditemukan di: Killers." .. remotePath .. "." .. SpearthrowRemote.Name)
+else
+    warn("⚠️ Spearthrow TIDAK DITEMUKAN di semua folder Killers!")
+end
+
+-- Snapline
+local SnaplineEnabled = true
+local SnaplineColor = Color3.fromRGB(255, 0, 0)
+local SnaplineThickness = 2
+local SnaplineTransparency = 0.8
+
+local Snapline = Drawing.new("Line")
+Snapline.Thickness = SnaplineThickness
+Snapline.Color = SnaplineColor
+Snapline.Transparency = SnaplineTransparency
+Snapline.Visible = false
+Snapline.From = Vector2.new(0, 0)
+Snapline.To = Vector2.new(0, 0)
+
+-- FOV Circle
 local FOVCircle = Drawing.new("Circle")
-FOVCircle.Thickness, FOVCircle.Color, FOVCircle.Filled, FOVCircle.Transparency, FOVCircle.Radius = 2, Color3.fromRGB(255,255,255), false, 1, FOV_Radius
-local function updateFOV() local v = Camera.ViewportSize FOVCircle.Position = Vector2.new(v.X/2, v.Y/2) end
-updateFOV()
-Camera:GetPropertyChangedSignal("ViewportSize"):Connect(updateFOV)
+FOVCircle.Thickness = 2
+FOVCircle.Color = Color3.fromRGB(255, 255, 255)
+FOVCircle.Filled = false
+FOVCircle.Transparency = 1
+FOVCircle.Radius = FOV_Radius
+FOVCircle.Visible = false
 
+local function UpdateFOVPosition()
+    local viewportSize = Camera.ViewportSize
+    FOVCircle.Position = Vector2.new(viewportSize.X / 2, viewportSize.Y / 2)
+end
+UpdateFOVPosition()
+Camera:GetPropertyChangedSignal("ViewportSize"):Connect(UpdateFOVPosition)
+
+-- Fungsi mendapatkan target terdekat
 local function GetClosestTarget()
-    local closest, shortDist, camPos = nil, FOV_Radius, Camera.CFrame.Position
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer and p.Character then
-            local part, hum = p.Character:FindFirstChild(TargetPart), p.Character:FindFirstChild("Humanoid")
-            if hum and hum.Health > 0 and part then
-                local dist = (part.Position - camPos).Magnitude
-                if dist < shortDist then shortDist = dist closest = p end
+    local closest = nil
+    local shortestDist = FOV_Radius
+    local cameraPos = Camera.CFrame.Position
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            local humanoid = player.Character:FindFirstChild("Humanoid")
+            local part = player.Character:FindFirstChild(TargetPart)
+            if humanoid and part and humanoid.Health > 0 then
+                local targetPos = part.Position
+                local dist = (targetPos - cameraPos).Magnitude
+                if dist < shortestDist then
+                    shortestDist = dist
+                    closest = player
+                end
             end
         end
     end
@@ -60,215 +279,491 @@ end
 
 local function AimAndThrow()
     if not AimbotEnabled or not AttackHeld or not SpearthrowRemote then return end
-    local target, targetPart, killerChar = GetClosestTarget(), nil, LocalPlayer.Character
-    if not target or not target.Character or not killerChar then if Snapline then Snapline.Visible = false end return end
 
-    targetPart = target.Character:FindFirstChild(TargetPart)
+    local target = GetClosestTarget()
+    if not target or not target.Character then
+        if Snapline then Snapline.Visible = false end
+        return
+    end
+
+    local targetPart = target.Character:FindFirstChild(TargetPart)
+    local killerChar = LocalPlayer.Character
+    if not targetPart or not killerChar then
+        if Snapline then Snapline.Visible = false end
+        return
+    end
+
     local killerRoot = killerChar:FindFirstChild("HumanoidRootPart")
-    if not targetPart or not killerRoot then if Snapline then Snapline.Visible = false end return end
-
-    local targetPos, origin = targetPart.Position, killerRoot.Position
-
-    -- Snapline Update
-    if SnaplineEnabled then
-        local kScreen, kOn = Camera:WorldToScreenPoint(origin)
-        local tScreen, tOn = Camera:WorldToScreenPoint(targetPos)
-        if kOn and tOn then Snapline.From, Snapline.To, Snapline.Visible = Vector2.new(kScreen.X, kScreen.Y), Vector2.new(tScreen.X, tScreen.Y), true
-        else Snapline.Visible = false end
+    if not killerRoot then
+        if Snapline then Snapline.Visible = false end
+        return
     end
 
-    local dir, dist = (targetPos - origin).Unit, (targetPos - origin).Magnitude
-    SpearthrowRemote:FireServer(vector.create(dir.X, dir.Y, dir.Z), dist, vector.create(targetPos.X, targetPos.Y, targetPos.Z))
-end
+    local targetPos = targetPart.Position
+    local origin = killerRoot.Position
 
--- Deteksi Tombol Attack (Path: Slasher-mob)
-local function SetupAttack()
-    local btn = PlayerGui:FindFirstChild("Slasher-mob") and PlayerGui.Slasher-mob:FindFirstChild("Controls") and PlayerGui.Slasher-mob.Controls:FindFirstChild("attack")
-    if not btn then
-        for _, v in ipairs(PlayerGui:GetDescendants()) do if v.Name:lower() == "attack" and (v:IsA("ImageButton") or v:IsA("TextButton")) then btn = v break end end
-    end
-    if not btn then return warn("Attack button not found") end
-
-    if btn._connections then for _, c in ipairs(btn._connections) do c:Disconnect() end end
-    local function onPress() AttackHeld = true task.spawn(AimAndThrow) end
-    local function onRelease() AttackHeld = false if Snapline then Snapline.Visible = false end end
-
-    btn._connections = {
-        btn.MouseButton1Down:Connect(onPress), btn.MouseButton1Up:Connect(onRelease),
-        btn.TouchBegan:Connect(onPress), btn.TouchEnded:Connect(onRelease)
-    }
-end
-task.wait(1) SetupAttack()
-
--- Loop Aim
-RunService.RenderStepped:Connect(function()
-    if AimbotEnabled and AttackHeld then local n = os.clock() if n - LastAimTime >= AimDelay then AimAndThrow() LastAimTime = n end
-    else if Snapline then Snapline.Visible = false end end
-end)
-
--- ============================================
--- ESP MODULE (Player, Tracer, Bright, Alert)
--- ============================================
-local espEnabled, tracerEnabled, fullbrightEnabled, killerAlertEnabled = false, false, false, false
-local highlights, tracers, lastAlert, espConn = {}, {}, 0, nil
-
-local function AddESP(p)
-    if p == LocalPlayer then return end
-    local function setup(char)
-        if highlights[p] then highlights[p]:Destroy() highlights[p] = nil end
-        local h = Instance.new("Highlight")
-        h.Parent, h.Adornee, h.DepthMode = game.CoreGui, char, Enum.HighlightDepthMode.AlwaysOnTop
-        h.FillColor = (p.Team == LocalPlayer.Team) and Color3.fromRGB(0,255,180) or Color3.fromRGB(255,60,60)
-        h.FillTransparency, h.OutlineColor = 0.45, Color3.new(1,1,1)
-        highlights[p] = h
-    end
-    if p.Character then setup(p.Character) end
-    p.CharacterAdded:Connect(setup)
-end
-
-local function SetESP(s)
-    espEnabled = s
-    if s then for _, p in ipairs(Players:GetPlayers()) do AddESP(p) end if not espConn then espConn = Players.PlayerAdded:Connect(function(p) if espEnabled then AddESP(p) end) end
-    else for _, h in pairs(highlights) do h:Destroy() end highlights = {} if espConn then espConn:Disconnect() espConn = nil end end
-end
-
-local function UpdateTracers()
-    if not tracerEnabled then for _, l in pairs(tracers) do l.Visible = false end return end
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-            if not tracers[p] then tracers[p] = Drawing.new("Line") tracers[p].Thickness, tracers[p].Transparency = 2, 1 end
-            local pos, on = Camera:WorldToViewportPoint(p.Character.HumanoidRootPart.Position)
-            local line = tracers[p]
-            if on then
-                line.Visible, line.From, line.To = true, Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y), Vector2.new(pos.X, pos.Y)
-                line.Color = (p.Team == LocalPlayer.Team) and Color3.fromRGB(0,255,180) or Color3.fromRGB(255,60,60)
-            else line.Visible = false end
+    -- Update Snapline
+    if SnaplineEnabled and Snapline then
+        local killerScreenPos, kOn = Camera:WorldToScreenPoint(origin)
+        local targetScreenPos, tOn = Camera:WorldToScreenPoint(targetPos)
+        if kOn and tOn then
+            Snapline.From = Vector2.new(killerScreenPos.X, killerScreenPos.Y)
+            Snapline.To = Vector2.new(targetScreenPos.X, targetScreenPos.Y)
+            Snapline.Visible = true
+        else
+            Snapline.Visible = false
         end
     end
-end
 
-local function SetTracer(s) tracerEnabled = s if not s then for _, l in pairs(tracers) do l.Visible = false end end end
-local function SetFullbright(s) fullbrightEnabled = s Lighting.Brightness, Lighting.GlobalShadows = s and 4 or 2, not s if s then Lighting.ClockTime, Lighting.FogEnd = 14, 100000 end end
-local function SetAlert(s) killerAlertEnabled = s end
+    local direction = (targetPos - origin).Unit
+    local distance = (targetPos - origin).Magnitude
 
--- ============================================
--- SKILL CHECK (Survivor)
--- ============================================
-local Check, LineRef, GoalRef, ActionRef
-local function RefreshRefs()
+    local args = {
+        vector.create(direction.X, direction.Y, direction.Z),
+        distance,
+        vector.create(targetPos.X, targetPos.Y, targetPos.Z)
+    }
+
     pcall(function()
-        local sg = PlayerGui:FindFirstChild("SkillCheckPromptGui")
-        if sg then Check, LineRef, GoalRef = sg:FindFirstChild("Check"), sg.Check and sg.Check:FindFirstChild("Line"), sg.Check and sg.Check:FindFirstChild("Goal") end
-        local sm = PlayerGui:FindFirstChild("Survivor-mob")
-        if sm and sm:FindFirstChild("Controls") then ActionRef = sm.Controls:FindFirstChild("action") end
+        SpearthrowRemote:FireServer(unpack(args))
     end)
 end
-RefreshRefs()
-task.spawn(function() while true do RefreshRefs() task.wait(0.5) end end)
+
+-- Deteksi tombol attack (mobile) - PRIORITAS Slasher-mob
+local function SetupAttackButton()
+    local AttackButton = nil
+
+    -- 1. Cari di Slasher-mob (killer) dulu
+    local slasher = PlayerGui:FindFirstChild("Slasher-mob")
+    if slasher then
+        local controls = slasher:FindFirstChild("Controls")
+        if controls then
+            AttackButton = controls:FindFirstChild("attack")
+        end
+    end
+
+    -- 2. Kalau belum ketemu, cari di seluruh PlayerGui (fallback)
+    if not AttackButton then
+        for _, child in ipairs(PlayerGui:GetDescendants()) do
+            if child.Name:lower() == "attack" and (child:IsA("ImageButton") or child:IsA("TextButton")) then
+                AttackButton = child
+                break
+            end
+        end
+    end
+
+    if not AttackButton then
+        warn("⚠️ Tombol 'attack' tidak ditemukan! Path: PlayerGui.Slasher-mob.Controls.attack")
+        return
+    end
+
+    -- Hapus koneksi lama (biar ga dobel)
+    if AttackButton._connections then
+        for _, con in ipairs(AttackButton._connections) do
+            con:Disconnect()
+        end
+    end
+
+    -- Event HOLD
+    local function onPress()
+        AttackHeld = true
+        task.spawn(AimAndThrow)
+    end
+    local function onRelease()
+        AttackHeld = false
+        if Snapline then Snapline.Visible = false end
+    end
+
+    local con1 = AttackButton.MouseButton1Down:Connect(onPress)
+    local con2 = AttackButton.MouseButton1Up:Connect(onRelease)
+    local con3 = AttackButton.TouchBegan:Connect(onPress)
+    local con4 = AttackButton.TouchEnded:Connect(onRelease)
+
+    AttackButton._connections = {con1, con2, con3, con4}
+
+    print("✅ Tombol 'attack' ditemukan di:", AttackButton:GetFullName())
+end
+
+task.wait(1)
+SetupAttackButton()
+
+-- Loop utama Silent Aim
+RunService.RenderStepped:Connect(function()
+    if AimbotEnabled and AttackHeld then
+        local now = os.clock()
+        if now - LastAimTime >= AimDelay then
+            AimAndThrow()
+            LastAimTime = now
+        end
+    else
+        if Snapline and Snapline.Visible then
+            Snapline.Visible = false
+        end
+    end
+end)
+
+-- ============================================================
+-- SKILL CHECK (Survivor)
+-- ============================================================
+
+local Check, Line, Goal, Action
+local function RefreshReferences()
+    pcall(function()
+        local SkillGui = PlayerGui:FindFirstChild("SkillCheckPromptGui")
+        if SkillGui then
+            Check = SkillGui:FindFirstChild("Check")
+            if Check then
+                Line = Check:FindFirstChild("Line")
+                Goal = Check:FindFirstChild("Goal")
+            end
+        end
+        local Survivor = PlayerGui:FindFirstChild("Survivor-mob")
+        if Survivor then
+            local Controls = Survivor:FindFirstChild("Controls")
+            if Controls then
+                Action = Controls:FindFirstChild("action")
+            end
+        end
+    end)
+end
+RefreshReferences()
+task.spawn(function()
+    while true do
+        RefreshReferences()
+        task.wait(0.5)
+    end
+end)
 
 local function TriggerAction()
-    if not ActionRef then RefreshRefs() end
-    if not ActionRef then return false end
-    if os.clock() - LastTrigger < TriggerDelay then return false end
-    LastTrigger = os.clock()
-    pcall(function() if ActionRef:IsA("GuiButton") then ActionRef:Activate() end end)
-    if typeof(firesignal) == "function" then pcall(function() firesignal(ActionRef.MouseButton1Down) end) end
+    if not Action then RefreshReferences() end
+    if not Action then return false end
+    local Now = os.clock()
+    if Now - LastTrigger < TriggerDelay then return false end
+    LastTrigger = Now
+    pcall(function()
+        if Action:IsA("GuiButton") then Action:Activate() end
+    end)
+    if typeof(firesignal) == "function" then
+        pcall(function() firesignal(Action.MouseButton1Down) end)
+    end
     return true
 end
 
-local function GetAngle() if LineRef and GoalRef then return tonumber(LineRef.Rotation) or 0, tonumber(GoalRef.Rotation) or 0 end end
+local function GetAngle()
+    if not Line or not Goal then return nil end
+    return tonumber(Line.Rotation) or 0, tonumber(Goal.Rotation) or 0
+end
 
-RunService.RenderStepped:Connect(function()
-    if not Enabled then PreviousVisible = false return end
-    if not Check then RefreshRefs() end
-    if not Check then return end
-    local visible = Check.Visible
-    if visible and not PreviousVisible then
-        Busy = false
-        if not ScourgeActive and Mode == "INSTANT" then
-            local gr = tonumber(GoalRef.Rotation) or 0
-            if LineRef then LineRef.Rotation = gr + 109 end
-            TriggerAction()
-        end
-    end
-    PreviousVisible = visible
+local function IsSuccess()
+    local LineRotation, GoalRotation = GetAngle()
+    if not LineRotation then return false end
+    local Min = GoalRotation + SUCCESS_MIN
+    local Max = GoalRotation + SUCCESS_MAX
+    return LineRotation >= Min and LineRotation <= Max
+end
 
-    if visible and not ScourgeActive and not Busy then
-        local should = false
-        if Mode == "SUCCESS" then
-            local lr, gr = GetAngle()
-            if lr and lr >= gr + SUCCESS_MIN and lr <= gr + SUCCESS_MAX then should = true end
-        elseif Mode == "NEUTRAL" then
-            local lr, gr = GetAngle()
-            if lr and lr > gr + NEUTRAL_MIN and lr <= gr + NEUTRAL_MAX then should = true end
-        end
-        if should then Busy = true TriggerAction() task.delay(0.07, function() Busy = false end) end
-    end
+local function IsNeutral()
+    local LineRotation, GoalRotation = GetAngle()
+    if not LineRotation then return false end
+    local Min = GoalRotation + NEUTRAL_MIN
+    local Max = GoalRotation + NEUTRAL_MAX
+    return LineRotation > Min and LineRotation <= Max
+end
 
-    if ScourgeActive and visible then
-        if Mode == "SUCCESS" and not Busy then
-            local lr, gr = GetAngle()
-            if lr and lr >= gr + SUCCESS_MIN and lr <= gr + SUCCESS_MAX then Busy = true TriggerAction() task.delay(0.06, function() Busy = false end) end
-        elseif Mode == "INSTANT" then
-            local lr, gr = GetAngle()
-            if lr and gr and math.abs(lr - gr) > 130 then Busy = false end
-        end
-    end
-end)
+local function InstantNormal()
+    if not Check or not Line or not Goal then RefreshReferences() end
+    if not Check or not Line or not Goal then return end
+    if not Check.Visible then return end
+    local GoalRotation = tonumber(Goal.Rotation) or 0
+    Line.Rotation = GoalRotation + 109
+    TriggerAction()
+end
+
+local function InstantScourge()
+    if not Enabled then return end
+    if not ScourgeActive then return end
+    if not Line or not Goal then RefreshReferences() end
+    if not Line or not Goal then return end
+    local GoalRotation = tonumber(Goal.Rotation) or 0
+    Line.Rotation = GoalRotation + 109
+    TriggerAction()
+    ScourgeRound = ScourgeRound + 1
+end
 
 if KingScourgeStart then
     KingScourgeStart.OnClientEvent:Connect(function()
         if not Enabled then return end
-        ScourgeActive, ScourgeRound, Busy = true, 0, false
-        if Mode == "INSTANT" then
-            task.defer(function() if Enabled and ScourgeActive then local gr = tonumber(GoalRef.Rotation) or 0 if LineRef then LineRef.Rotation = gr + 109 end TriggerAction() ScourgeRound = ScourgeRound + 1 end end)
-        end
+        ScourgeActive = true
+        ScourgeRound = 0
+        Busy = false
+        task.defer(function()
+            if not Enabled then return end
+            if Mode == "INSTANT" then InstantScourge() end
+        end)
     end)
 end
-if KingScourgeEnd then KingScourgeEnd.OnClientEvent:Connect(function() ScourgeActive, Busy = false, false end) end
 
-LocalPlayer.CharacterAdded:Connect(function()
-    Busy, ScourgeActive, PreviousVisible = false, false, false
-    task.wait(2)
-    RefreshRefs()
-    SetupAttack()
+if KingScourgeEnd then
+    KingScourgeEnd.OnClientEvent:Connect(function()
+        ScourgeActive = false
+        Busy = false
+    end)
+end
+
+local PreviousVisible = false
+
+RunService.RenderStepped:Connect(function()
+    if not Enabled then
+        PreviousVisible = false
+        return
+    end
+
+    if not Check then RefreshReferences() end
+    if not Check then return end
+
+    local Visible = Check.Visible
+
+    if Visible and not PreviousVisible then
+        Busy = false
+        if not ScourgeActive then
+            if Mode == "INSTANT" then InstantNormal() end
+        end
+    end
+
+    PreviousVisible = Visible
+
+    if Visible and not ScourgeActive then
+        if not Busy then
+            local ShouldTrigger = false
+            if Mode == "SUCCESS" then ShouldTrigger = IsSuccess()
+            elseif Mode == "NEUTRAL" then ShouldTrigger = IsNeutral() end
+            if ShouldTrigger then
+                Busy = true
+                TriggerAction()
+                task.delay(0.07, function() Busy = false end)
+            end
+        end
+    end
+
+    if ScourgeActive and Visible then
+        if Mode == "SUCCESS" then
+            if not Busy and IsSuccess() then
+                Busy = true
+                TriggerAction()
+                task.delay(0.06, function() Busy = false end)
+            end
+        elseif Mode == "NEUTRAL" then
+            if not Busy and IsNeutral() then
+                Busy = true
+                TriggerAction()
+                task.delay(0.06, function() Busy = false end)
+            end
+        elseif Mode == "INSTANT" then
+            local CurrentGoal = tonumber(Goal.Rotation) or 0
+            local CurrentLine = tonumber(Line.Rotation) or 0
+            if math.abs(CurrentLine - CurrentGoal) > 130 then Busy = false end
+        end
+    end
 end)
 
--- ============================================
--- UI (Reader Interface)
--- ============================================
-local Window = Library:CreateWindow({Title = "Readers Interface", Footer = "Violence district by 49|51", Icon = 95816097006870, NotifySide = "Right"})
-Library:Notify({Title = "Execute successfully", Description = "Enjoy the script", Time = 4})
+task.spawn(function()
+    local LastGoalRotation = nil
+    while true do
+        if Enabled and ScourgeActive and Mode == "INSTANT" then
+            RefreshReferences()
+            if Check and Check.Visible and Goal and Line then
+                local CurrentGoal = tonumber(Goal.Rotation) or 0
+                if LastGoalRotation == nil then
+                    LastGoalRotation = CurrentGoal
+                    InstantScourge()
+                elseif math.abs(CurrentGoal - LastGoalRotation) > 1 then
+                    LastGoalRotation = CurrentGoal
+                    InstantScourge()
+                end
+            end
+        else
+            LastGoalRotation = nil
+        end
+        task.wait(0.005)
+    end
+end)
 
+LocalPlayer.CharacterAdded:Connect(function()
+    Busy = false
+    ScourgeActive = false
+    PreviousVisible = false
+    task.wait(1)
+    RefreshReferences()
+    task.wait(2)
+    SetupAttackButton()
+end)
+
+-- ============================================================
+-- 🖥️ UI (Reader Interface)
+-- ============================================================
+
+local Window = Library:CreateWindow({
+    Title = "Readers Interface",
+    Footer = "Violence district by 49|51",
+    Icon = 95816097006870,
+    NotifySide = "Right",
+})
+
+Library:Notify({
+    Title = "Execute successfully",
+    Description = "Enjoy the script",
+    Time = 4,
+})
+
+-- TAB SURVIVOR
 local SurvivorTab = Window:AddTab("Survivor", "user")
-local G1 = SurvivorTab:AddGroupbox({ Side = "Left", Name = "Groupbox" })
-G1:AddDropdown("Method", {Text="Method", Values={"Legit","Instant"}, Default=1, Multi=false}):OnChanged(function(v) Mode = string.upper(v) end)
-G1:AddToggle("AutoGen", {Text="Auto generator", Default=false}):OnChanged(function(s) Enabled = s Busy = false if not s then ScourgeActive, PreviousVisible = false, false end end)
+local Groupbox = SurvivorTab:AddGroupbox({ Side = "Left", Name = "Groupbox" })
 
+local Dropdown = Groupbox:AddDropdown("CheckMethod", {
+    Text = "Method",
+    Values = { "Legit", "Instant" },
+    Default = 1,
+    Multi = false,
+})
+Dropdown:OnChanged(function(value)
+    Mode = string.upper(value)
+end)
+
+local GeneratorToggle = Groupbox:AddToggle("Generator", {
+    Text = "Auto generator",
+    Default = false,
+})
+GeneratorToggle:OnChanged(function(state)
+    Enabled = state
+    Busy = false
+    if not Enabled then
+        ScourgeActive = false
+        PreviousVisible = false
+    end
+end)
+
+-- TAB KILLER
 local KillerTab = Window:AddTab("Killer", "sword")
-local G2 = KillerTab:AddGroupbox({ Side = "Right", Name = "Aim silent ( Veil )" })
-G2:AddSlider("POV", {Text="Pov Radius", Default=100, Min=0, Max=350, Rounding=0}):OnChanged(function(v) FOV_Radius = v FOVCircle.Radius = v end)
-G2:AddToggle("VeilSA", {Text="Silent aim", Default=false}):OnChanged(function(s) AimbotEnabled = s FOVCircle.Visible = s if not s then AttackHeld = false if Snapline then Snapline.Visible = false end end end)
-G2:AddToggle("SnaplineVis", {Text="Tampilkan Snapline", Default=true}):OnChanged(function(s) SnaplineEnabled = s if not s and Snapline then Snapline.Visible = false end end)
+local Groupbox2 = KillerTab:AddGroupbox({ Side = "Right", Name = "Aim silent ( Veil )" })
 
+local POVSlider = Groupbox2:AddSlider("POV", {
+    Text = "Pov Radius",
+    Default = 100,
+    Min = 0,
+    Max = 350,
+    Rounding = 0,
+})
+POVSlider:OnChanged(function(value)
+    FOV_Radius = value
+    FOVCircle.Radius = value
+end)
+
+local VSAToggle = Groupbox2:AddToggle("VeilSillent", {
+    Text = "Silent aim",
+    Default = false,
+})
+VSAToggle:OnChanged(function(state)
+    AimbotEnabled = state
+    FOVCircle.Visible = state
+    if not state then
+        AttackHeld = false
+        if Snapline then Snapline.Visible = false end
+    end
+end)
+
+local SnaplineToggle = Groupbox2:AddToggle("SnaplineToggle", {
+    Text = "Tampilkan Snapline",
+    Default = true,
+})
+SnaplineToggle:OnChanged(function(state)
+    SnaplineEnabled = state
+    if not state and Snapline then
+        Snapline.Visible = false
+    end
+end)
+
+-- TAB VISUAL
 local VisualTab = Window:AddTab("Visual", "eye")
-local G3 = VisualTab:AddGroupbox({ Side = "Left", Name = "ESP Settings" })
-G3:AddToggle("ESP", {Text="🔴 ESP Player", Default=false}):OnChanged(SetESP)
-G3:AddToggle("Tracer", {Text="📍 Tracer", Default=false}):OnChanged(SetTracer)
-G3:AddToggle("Bright", {Text="☀️ Fullbright", Default=false}):OnChanged(SetFullbright)
-G3:AddToggle("Alert", {Text="🚨 Killer Alert", Default=false}):OnChanged(SetAlert)
 
--- Loop Tracer & Alert
+local VisualGroupbox = VisualTab:AddGroupbox({ Side = "Left", Name = "ESP Settings" })
+
+local ESPToggle = VisualGroupbox:AddToggle("ESPToggle", {
+    Text = "🔴 ESP Player (Killer/Survivor)",
+    Default = false,
+})
+ESPToggle:OnChanged(function(state)
+    SetESP(state)
+    Library:Notify({
+        Title = "ESP Player",
+        Description = state and "✅ Diaktifkan" or "❌ Dinonaktifkan",
+        Time = 2,
+    })
+end)
+
+local TracerToggle = VisualGroupbox:AddToggle("TracerToggle", {
+    Text = "📍 Tracer (Garis ke Player)",
+    Default = false,
+})
+TracerToggle:OnChanged(function(state)
+    SetTracer(state)
+    Library:Notify({
+        Title = "Tracer",
+        Description = state and "✅ Diaktifkan" or "❌ Dinonaktifkan",
+        Time = 2,
+    })
+end)
+
+local FullbrightToggle = VisualGroupbox:AddToggle("FullbrightToggle", {
+    Text = "☀️ Fullbright (Terangin Map)",
+    Default = false,
+})
+FullbrightToggle:OnChanged(function(state)
+    SetFullbright(state)
+    Library:Notify({
+        Title = "Fullbright",
+        Description = state and "✅ Diaktifkan" or "❌ Dinonaktifkan",
+        Time = 2,
+    })
+end)
+
+local AlertToggle = VisualGroupbox:AddToggle("AlertToggle", {
+    Text = "🚨 Killer Alert (Notifikasi Jarak)",
+    Default = false,
+})
+AlertToggle:OnChanged(function(state)
+    SetKillerAlert(state)
+    Library:Notify({
+        Title = "Killer Alert",
+        Description = state and "✅ Diaktifkan" or "❌ Dinonaktifkan",
+        Time = 2,
+    })
+end)
+
+-- ============================================================
+-- LOOP UNTUK TRACER & KILLER ALERT
+-- ============================================================
 RunService.RenderStepped:Connect(function()
-    if tracerEnabled then UpdateTracers() end
-    if killerAlertEnabled and tick() - lastAlert > 4 then
-        for _, p in ipairs(Players:GetPlayers()) do
-            if p ~= LocalPlayer and p.Team ~= LocalPlayer.Team and p.Character and LocalPlayer.Character then
-                local eRoot, mRoot = p.Character:FindFirstChild("HumanoidRootPart"), LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-                if eRoot and mRoot and (eRoot.Position - mRoot.Position).Magnitude <= 14 then
-                    lastAlert = tick()
-                    StarterGui:SetCore("SendNotification", {Title = "🚨 Killer Nearby", Text = p.Name.." sangat dekat!", Duration = 2})
-                    break
+    if tracerEnabled then
+        UpdateTracers()
+    end
+    
+    if killerAlertEnabled then
+        if tick() - lastAlertTime < 4 then return end
+        for _, plr in pairs(Players:GetPlayers()) do
+            if plr ~= LocalPlayer and plr.Team ~= LocalPlayer.Team and plr.Character and LocalPlayer.Character then
+                local enemyRoot = plr.Character:FindFirstChild("HumanoidRootPart")
+                local myRoot = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                if enemyRoot and myRoot then
+                    local dist = (enemyRoot.Position - myRoot.Position).Magnitude
+                    if dist <= 14 then
+                        lastAlertTime = tick()
+                        StarterGui:SetCore("SendNotification", {
+                            Title = "🚨 Killer Nearby",
+                            Text = plr.Name .. " berada sangat dekat!",
+                            Duration = 2
+                        })
+                        break
+                    end
                 end
             end
         end
