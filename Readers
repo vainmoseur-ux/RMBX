@@ -193,11 +193,46 @@ local AimDelay = 0.15
 local LastAimTime = 0
 local FOV_Radius = 100
 
-local SpearthrowRemote
-pcall(function()
-    SpearthrowRemote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Killers"):WaitForChild("Veil"):WaitForChild("Spearthrow")
-end)
+-- ============================================================
+-- 🔍 CARI REMOTE SPEARTHROW (Otomatis di SEMUA Killers)
+-- ============================================================
+local SpearthrowRemote = nil
+local remotePath = ""
 
+local function FindSpearthrowRemote()
+    local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+    if not remotes then 
+        warn("❌ 'Remotes' tidak ditemukan!")
+        return nil 
+    end
+
+    local killers = remotes:FindFirstChild("Killers")
+    if not killers then 
+        warn("❌ 'Killers' tidak ditemukan!")
+        return nil 
+    end
+
+    -- Cari di semua subfolder
+    for _, folder in ipairs(killers:GetChildren()) do
+        if folder:IsA("Folder") or folder:IsA("Model") then
+            for _, remote in ipairs(folder:GetChildren()) do
+                if remote.Name:lower() == "spearthrow" then
+                    return remote, folder.Name
+                end
+            end
+        end
+    end
+    return nil, nil
+end
+
+SpearthrowRemote, remotePath = FindSpearthrowRemote()
+
+if SpearthrowRemote then
+    print("✅ Spearthrow ditemukan di: Killers." .. remotePath .. "." .. SpearthrowRemote.Name)
+else
+    warn("⚠️ Spearthrow TIDAK DITEMUKAN di semua folder Killers!")
+    warn("Pastikan kamu main sebagai Veil dan remote-nya bernama 'Spearthrow'.")
+end
 -- Snapline
 local SnaplineEnabled = true
 local SnaplineColor = Color3.fromRGB(255, 0, 0)
@@ -252,7 +287,23 @@ local function GetClosestTarget()
 end
 
 local function AimAndThrow()
-    if not AimbotEnabled or not AttackHeld or not SpearthrowRemote then return end
+    print("🔥 AimAndThrow dipanggil! (AttackHeld="..tostring(AttackHeld)..", AimbotEnabled="..tostring(AimbotEnabled)..")")
+    
+    if not AimbotEnabled then 
+        print("❌ AimbotEnabled false")
+        return 
+    end
+
+    if not AttackHeld then 
+        print("❌ AttackHeld false")
+        return 
+    end
+
+    if not SpearthrowRemote then 
+        print("❌ SpearthrowRemote nil!")
+        return 
+    end
+end
 
     local target = GetClosestTarget()
     if not target or not target.Character then
@@ -331,30 +382,31 @@ local function SetupAttackButton()
         return
     end
 
-    -- Hapus koneksi lama (biar ga dobel)
-    if AttackButton._connections then
-        for _, con in ipairs(AttackButton._connections) do
-            con:Disconnect()
-        end
+-- Hapus koneksi lama (biar ga dobel)
+if AttackButton._connections then
+    for _, con in ipairs(AttackButton._connections) do
+        con:Disconnect()
     end
+end
 
-    -- Event HOLD
-    local function onPress()
-        AttackHeld = true
-        task.spawn(AimAndThrow)
-    end
-    local function onRelease()
-        AttackHeld = false
-        if Snapline then Snapline.Visible = false end
-    end
+-- Event HOLD (pakai variabel biar rapi)
+local function onPress()
+    print("🔴 Tombol attack DITEKAN!")
+    AttackHeld = true
+    task.spawn(AimAndThrow)
+end
+local function onRelease()
+    print("🟢 Tombol attack DILEPAS!")
+    AttackHeld = false
+    if Snapline then Snapline.Visible = false end
+end
 
-    local con1 = AttackButton.MouseButton1Down:Connect(onPress)
-    local con2 = AttackButton.MouseButton1Up:Connect(onRelease)
-    local con3 = AttackButton.TouchBegan:Connect(onPress)
-    local con4 = AttackButton.TouchEnded:Connect(onRelease)
+local con1 = AttackButton.MouseButton1Down:Connect(onPress)
+local con2 = AttackButton.MouseButton1Up:Connect(onRelease)
+local con3 = AttackButton.TouchBegan:Connect(onPress)
+local con4 = AttackButton.TouchEnded:Connect(onRelease)
 
-    AttackButton._connections = {con1, con2, con3, con4}
-
+AttackButton._connections = {con1, con2, con3, con4}
     print("✅ Tombol 'attack' ditemukan di:", AttackButton:GetFullName())
 end
 
