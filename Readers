@@ -218,6 +218,21 @@ end
 
 SpearthrowRemote, remotePath = FindSpearthrowRemote()
 
+-- ===== CARI REMOTE BASICATTACK (untuk memicu throw) =====
+local BasicAttackRemote = nil
+local veilFolder = ReplicatedStorage:FindFirstChild("Remotes") and ReplicatedStorage.Remotes:FindFirstChild("Killers") and ReplicatedStorage.Remotes.Killers:FindFirstChild("Veil")
+if veilFolder then
+    BasicAttackRemote = veilFolder:FindFirstChild("BasicAttack")
+end
+
+if BasicAttackRemote then
+    print("✅ BasicAttack ditemukan di:", BasicAttackRemote:GetFullName())
+else
+    warn("⚠️ BasicAttack TIDAK ditemukan! Coba cek path.")
+end
+
+local hasTriggeredBasicAttack = false  -- Reset setiap kali tombol ditekan
+
 if SpearthrowRemote then
     print("✅ Spearthrow ditemukan di: Killers." .. remotePath .. "." .. SpearthrowRemote.Name)
 else
@@ -285,6 +300,20 @@ local function AimAndThrow()
         if Snapline then Snapline.Visible = false end
         return
     end
+
+local function AimAndThrow()
+    if not AimbotEnabled or not AttackHeld or not SpearthrowRemote then return end
+
+    -- 🔥 Panggil BasicAttack SEKALI setiap kali tombol ditekan
+    if not hasTriggeredBasicAttack and BasicAttackRemote then
+        hasTriggeredBasicAttack = true
+        BasicAttackRemote:FireServer(true, "Spearthrow", 3)
+        print("🔨 BasicAttack dikirim! (true, Spearthrow, 3)")
+    end
+
+    -- Lanjutkan cari target, hitung arah, kirim Spearthrow...
+    local target = GetClosestTarget()
+    -- ... (sisa kode AimAndThrow tetap sama, jangan diubah) ...
 
     local targetPart = target.Character:FindFirstChild(TargetPart)
     local killerChar = LocalPlayer.Character
@@ -367,10 +396,11 @@ local function SetupAttackButton()
     end
 
     local function onPress()
-        print("🔴 Tombol attack DITEKAN!")
-        AttackHeld = true
-        task.spawn(AimAndThrow)
-    end
+    print("🔴 Tombol attack DITEKAN!")
+    AttackHeld = true
+    hasTriggeredBasicAttack = false  -- Reset biar BasicAttack dipanggil lagi
+    task.spawn(AimAndThrow)
+end
     local function onRelease()
         print("🟢 Tombol attack DILEPAS!")
         AttackHeld = false
